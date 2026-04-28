@@ -1,0 +1,313 @@
+# Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022-2026)
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+from __future__ import annotations
+
+import sys
+import unittest
+from collections import namedtuple
+from typing import Any
+from unittest.mock import patch
+
+import numpy as np
+import pandas as pd
+import plotly.graph_objs as go
+import pytest
+from parameterized import parameterized
+
+from streamlit import type_util
+from streamlit.delta_generator import DeltaGenerator
+from streamlit.errors import StreamlitAPIException
+from streamlit.runtime.context import StreamlitCookies, StreamlitHeaders
+from streamlit.runtime.secrets import Secrets
+from streamlit.runtime.state import QueryParamsProxy, SessionStateProxy
+from streamlit.user_info import UserInfoProxy
+
+
+class TypeUtilTest(unittest.TestCase):
+    def test_list_is_plotly_chart(self):
+        trace0 = go.Scatter(x=[1, 2, 3, 4], y=[10, 15, 13, 17])
+        trace1 = go.Scatter(x=[1, 2, 3, 4], y=[16, 5, 11, 9])
+        data = [trace0, trace1]
+
+        res = type_util.is_plotly_chart(data)
+        assert res
+
+    def test_data_dict_is_plotly_chart(self):
+        trace0 = go.Scatter(x=[1, 2, 3, 4], y=[10, 15, 13, 17])
+        trace1 = go.Scatter(x=[1, 2, 3, 4], y=[16, 5, 11, 9])
+        d = {"data": [trace0, trace1]}
+
+        res = type_util.is_plotly_chart(d)
+        assert res
+
+    def test_dirty_data_dict_is_not_plotly_chart(self):
+        trace0 = go.Scatter(x=[1, 2, 3, 4], y=[10, 15, 13, 17])
+        trace1 = go.Scatter(x=[1, 2, 3, 4], y=[16, 5, 11, 9])
+        d = {"data": [trace0, trace1], "foo": "bar"}  # Illegal property!
+
+        res = type_util.is_plotly_chart(d)
+        assert not res
+
+    def test_layout_dict_is_not_plotly_chart(self):
+        d = {
+            # Missing a component with a graph object!
+            "layout": {"width": 1000}
+        }
+
+        res = type_util.is_plotly_chart(d)
+        assert not res
+
+    def test_fig_is_plotly_chart(self):
+        trace1 = go.Scatter(x=[1, 2, 3, 4], y=[16, 5, 11, 9])
+
+        # Plotly 3.7 needs to read the config file at /home/.plotly when
+        # creating an image. So let's mock that part of the Figure creation:
+        with patch("plotly.offline.offline._get_jconfig") as mock:
+            mock.return_value = {}
+            fig = go.Figure(data=[trace1])
+
+        res = type_util.is_plotly_chart(fig)
+        assert res
+
+    def test_is_namedtuple(self):
+        Boy = namedtuple("Boy", ("name", "age"))  # noqa: PYI024
+        John = Boy("John", "29")
+
+        res = type_util.is_namedtuple(John)
+        assert res
+
+    @pytest.mark.require_integration
+    def test_is_pydantic_model(self):
+        from pydantic import BaseModel
+
+        class OtherObject:
+            foo: int
+            bar: str
+
+        class BarModel(BaseModel):
+            foo: int
+            bar: str
+
+        assert type_util.is_pydantic_model(BarModel(foo=1, bar="test"))
+        assert not type_util.is_pydantic_model(BarModel)
+        assert not type_util.is_pydantic_model(OtherObject)
+
+    def test_to_bytes(self):
+        bytes_obj = b"some bytes"
+        assert type_util.is_bytes_like(bytes_obj)
+        assert isinstance(type_util.to_bytes(bytes_obj), bytes)
+
+        bytearray_obj = bytearray("a bytearray string", "utf-8")
+        assert type_util.is_bytes_like(bytearray_obj)
+        assert isinstance(type_util.to_bytes(bytearray_obj), bytes)
+
+        string_obj = "a normal string"
+        assert not type_util.is_bytes_like(string_obj)
+        with pytest.raises(RuntimeError):
+            type_util.to_bytes(string_obj)  # type: ignore
+
+    @parameterized.expand(
+        [
+            ([1, 2, 3],),
+            (["foo", "bar", "baz"],),
+            (np.array([1, 2, 3, 4]),),
+            (pd.Series([1, 2, 3]),),
+        ]
+    )
+    def test_check_python_comparable(self, sequence):
+        """Test that `check_python_comparable` not raises exception
+        when elements of sequence returns bool when compared."""
+
+        # Just check that it should not raise any exception
+        type_util.check_python_comparable(sequence)
+
+    @parameterized.expand(
+        [
+            (np.array([[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]]), "ndarray"),
+            ([pd.Series([1, 2, 3]), pd.Series([4, 5, 6])], "Series"),
+        ]
+    )
+    def test_check_python_comparable_exception(self, sequence, type_str):
+        """Test that `check_python_comparable` raises an exception if ndarray."""
+        with pytest.raises(StreamlitAPIException) as exception_message:
+            type_util.check_python_comparable(sequence)
+        assert (
+            "Invalid option type provided. Options must be comparable, returning a "
+            f"boolean when used with *==*. \n\nGot **{type_str}**, which cannot be "
+            "compared. Refactor your code to use elements of comparable types as options, e.g. use indices instead."
+            == str(exception_message.value)
+        )
+
+    def test_has_callable_attr(self):
+        class TestClass:
+            def __init__(self) -> None:
+                self.also_not_callable = "I am not callable"
+
+            def callable_attr(self):
+                pass
+
+            @property
+            def not_callable_attr(self):
+                return "I am a property"
+
+        assert type_util.has_callable_attr(TestClass, "callable_attr") is True
+        assert type_util.has_callable_attr(TestClass, "not_callable_attr") is False
+        assert type_util.has_callable_attr(TestClass, "also_not_callable") is False
+        assert type_util.has_callable_attr(TestClass, "not_a_real_attr") is False
+
+        assert type_util.has_callable_attr(DeltaGenerator(), "foo") is False
+
+    @parameterized.expand(
+        [
+            ({"key": "value"}, False),
+            (Secrets(), True),
+            (QueryParamsProxy(), True),
+            (SessionStateProxy(), True),
+            (StreamlitCookies({}), True),
+            (StreamlitHeaders({}), True),
+            (UserInfoProxy(), True),
+        ]
+    )
+    def test_is_custom_dict(self, dict_obj: Any, is_custom_dict: bool):
+        """Test that `is_custom_dict` returns True for all Streamlit custom dicts."""
+        assert type_util.is_custom_dict(dict_obj) is is_custom_dict
+
+    def test_is_delta_generator(self):
+        """Test that `is_delta_generator` returns True for DeltaGenerator."""
+
+        assert type_util.is_delta_generator(DeltaGenerator()) is True
+        assert type_util.is_delta_generator("not a DeltaGenerator") is False
+
+    def test_async_generator_to_sync(self):
+        """Test that `async_generator_to_sync` converts an async generator to a sync
+        generator."""
+
+        async def async_gen():
+            yield "hello "
+            yield "world "
+            yield "!"
+
+        sync_gen = type_util.async_generator_to_sync(async_gen())
+        assert "".join(sync_gen) == "hello world !"
+
+
+def test_get_object_name_uses_name_when_qualname_missing() -> None:
+    """Use ``__name__`` when the instance has no ``__qualname__`` but ``__name__`` is a string."""
+
+    class _InstanceWithNameOnly:
+        def __init__(self) -> None:
+            self.__name__ = "custom_instance_name"
+
+    assert type_util.get_object_name(_InstanceWithNameOnly()) == "custom_instance_name"
+
+
+def test_get_object_name_falls_back_to_type_qualname() -> None:
+    """Fall back to ``type(obj).__qualname__`` when ``__qualname__``/``__name__`` are absent."""
+    assert type_util.get_object_name(object()) == "object"
+
+
+@pytest.mark.require_integration
+def test_is_sympy_expression() -> None:
+    """Detect SymPy expressions after importing ``sympy`` and checking ``sympy.Expr``."""
+    import sympy
+
+    sympy_expr = sympy.Symbol("t") + 1
+    assert type_util.is_sympy_expression(sympy_expr) is True
+    assert type_util.is_sympy_expression("plain string") is False
+
+
+def test_is_plotly_chart_dict_with_graph_object_value() -> None:
+    """Return True for plotly-shaped dicts whose values include a graph object."""
+    trace = go.Scatter(x=[1, 2], y=[3, 4])
+    assert type_util.is_plotly_chart({"data": trace}) is True
+
+
+def _type_util_sample_function() -> None:
+    """Sample function for ``is_function`` tests."""
+
+
+@pytest.mark.parametrize(
+    ("obj", "expected"),
+    [
+        (_type_util_sample_function, True),
+        (lambda: None, True),
+        (str, False),
+    ],
+    ids=["def_function", "lambda", "builtin_type"],
+)
+def test_is_function(obj: object, expected: bool) -> None:
+    """Return True only for ``types.FunctionType`` (def functions and lambdas)."""
+    assert type_util.is_function(obj) is expected
+
+
+@pytest.mark.require_integration
+def test_dump_pydantic_sequence_model_dump_v2() -> None:
+    """Serialize each item with ``model_dump(mode='json')`` when Pydantic v2 is used."""
+    from pydantic import BaseModel
+
+    class _DumpPydanticPoint(BaseModel):
+        """Tiny Pydantic v2 model for ``dump_pydantic_sequence`` tests."""
+
+        x: int
+        y: int
+
+    models = [_DumpPydanticPoint(x=1, y=2), _DumpPydanticPoint(x=3, y=4)]
+    assert type_util.dump_pydantic_sequence(models) == [
+        {"x": 1, "y": 2},
+        {"x": 3, "y": 4},
+    ]
+
+
+@pytest.mark.parametrize(
+    ("obj", "expected"),
+    [
+        (42, False),
+        ([1, 2, 3], True),
+    ],
+    ids=["non_iterable", "list"],
+)
+def test_is_iterable(obj: object, expected: bool) -> None:
+    """Return False when ``iter`` raises ``TypeError``; otherwise True."""
+    assert type_util.is_iterable(obj) is expected
+
+
+@pytest.mark.skipif(
+    sys.version_info < (3, 14),
+    reason="PEP 649 deferred annotation evaluation is only in Python 3.14+",
+)
+def test_get_func_parameters_handles_pep649_annotations() -> None:
+    """Resolve PEP 649 deferred annotations without evaluating undefined names.
+
+    On Python 3.14+, ``inspect.signature`` can raise ``NameError`` for
+    annotations that reference ``TYPE_CHECKING``-only types; ``get_func_parameters``
+    uses string annotations instead. See https://github.com/streamlit/streamlit/issues/14324.
+    """
+    import inspect
+
+    from tests.testutil import create_pep649_function
+
+    def base_func(items: object) -> None:
+        pass
+
+    func = create_pep649_function(
+        base_func, {"items": "UndefinedType", "return": "None"}
+    )
+
+    with pytest.raises(NameError, match="UndefinedType"):
+        inspect.signature(func)
+
+    params = type_util.get_func_parameters(func)
+    assert len(params) == 1
+    assert params[0].name == "items"

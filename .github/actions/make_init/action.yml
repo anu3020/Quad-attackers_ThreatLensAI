@@ -1,0 +1,140 @@
+name: "Setup Virtual Env"
+description: Sets up uv, Python, virtualenv, React, and compiles protobuf.
+  This action intentionally does NOT install Playwright browsers.
+  For CI jobs that need Playwright, call `./.github/actions/playwright_install`
+  after this action.
+
+inputs:
+  python_version:
+    description: "Python version to install via uv (e.g., '3.12', '3.10')"
+    required: true
+  use_cached_venv:
+    description: "Use Cached Virtual Env"
+    default: "true"
+
+# There is an altered copy of these steps inlined in the python_min_deps
+# workflow. If you make changes to this action, apply them there too if appropriate.
+runs:
+  using: composite
+  steps:
+    # Install uv and Python using the official astral-sh/setup-uv action.
+    # This handles uv installation, Python version management, and venv activation.
+    - name: Install uv and Python ${{ inputs.python_version }}
+      uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
+      with:
+        python-version: ${{ inputs.python_version }}
+        enable-cache: ${{ inputs.use_cached_venv }}
+        cache-suffix: py${{ inputs.python_version }}
+        # Cache Python installations to prevent broken symlinks in cached venvs
+        cache-python: true
+        # Auto-create and activate .venv
+        activate-environment: true
+        # Suppress errors when nothing to cache (e.g., Python restored from cache)
+        ignore-nothing-to-cache: true
+        # Use GitHub token to avoid API rate limiting
+        github-token: ${{ github.token }}
+    - name: Enable and Prepare Latest Yarn
+      run: corepack enable
+      shell: bash
+    - name: Setup Node
+      uses: actions/setup-node@v6
+      with:
+        node-version-file: ".nvmrc"
+        cache: "yarn"
+        cache-dependency-path: "**/yarn.lock"
+    - name: Initialize React
+      run: |
+        # Create the cache directory if it does not exist.
+        mkdir -p $(yarn cache dir)
+        make frontend-init
+      shell: bash
+    # We require protoc >= 3.20, but Ubuntu 22.04 - the OS that these Github
+    # Actions are running as of 2024.06.04 - doesn't have recent versions
+    # of protoc in its package repository. To work around this, we
+    # install the latest version from the protobuf release page.
+    - name: Install `protoc` binary
+      run: |
+        PROTOC_VERSION=26.1
+        # Use -f to fail on HTTP errors (preventing 404 pages from being saved as zips),
+        # and retry options to handle transient network failures common in CI.
+        curl -fOL --retry 5 --retry-all-errors --retry-delay 3 https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip
+
+        # Validate the downloaded file is a zip archive.
+        # If the download was a 200 OK HTML page (e.g. soft error), unzip -tq will fail.
+        if ! unzip -tq protoc-${PROTOC_VERSION}-linux-x86_64.zip; then
+          echo "::error::Downloaded file is not a valid zip. Content preview:"
+          head -n 20 protoc-${PROTOC_VERSION}-linux-x86_64.zip
+          exit 1
+        fi
+
+        sudo unzip -o protoc-${PROTOC_VERSION}-linux-x86_64.zip -d /usr/local bin/protoc
+        sudo unzip -o protoc-${PROTOC_VERSION}-linux-x86_64.zip -d /usr/local 'include/*'
+        sudo ln -s /usr/local/bin/protoc /usr/bin/protoc
+        # Print out your System's protoc version:
+        protoc --version
+      shell: bash
+    # Combine hashes of the Python interpreter and config files into a cache key.
+    # This means that our virtualenv cache will expire each day. We do
+    # this because we are not using a lockfile to pin dependencies -
+    # instead, each time Github Actions rebuilds the virtualenv, it uses the
+    # latest compatible version of each dependency (which mirrors what
+    # happens when a user installs Streamlit locally). So we expire our
+    # virtualenv cache daily to prevent it from getting far out of sync
+    # with what a fresh Streamlit installation would look like.
+    - if: inputs.use_cached_venv == 'true'
+      name: Create Python environment cache key
+      run: |
+        # Create cache key from Python version, config files, and date
+        # (Python binary is now cached by setup-uv with cache-python: true)
+        echo "${{ inputs.python_version }}" > $GITHUB_WORKSPACE/python_cache_key.md5
+        md5sum pyproject.toml >> $GITHUB_WORKSPACE/python_cache_key.md5
+        md5sum lib/pyproject.toml >> $GITHUB_WORKSPACE/python_cache_key.md5
+        md5sum Makefile >> $GITHUB_WORKSPACE/python_cache_key.md5
+        date +%F >> $GITHUB_WORKSPACE/python_cache_key.md5
+      shell: bash
+    - if: inputs.use_cached_venv == 'true'
+      name: Restore virtualenv from cache
+      id: cache-virtualenv
+      uses: actions/cache@v5
+      with:
+        path: .venv
+        key: v2-python-venv-py${{ inputs.python_version }}-${{ hashFiles('**/python_cache_key.md5') }}
+    - name: Check if venv is valid
+      id: check-venv
+      if: steps.cache-virtualenv.outputs.cache-hit == 'true'
+      run: |
+        # Check if the cached venv has valid symlinks
+        if .venv/bin/python --version > /dev/null 2>&1; then
+          echo "valid=true" >> $GITHUB_OUTPUT
+        else
+          echo "::warning::Cached venv has broken symlinks, will recreate"
+          echo "valid=false" >> $GITHUB_OUTPUT
+          rm -rf .venv
+        fi
+      shell: bash
+    - if: steps.cache-virtualenv.outputs.cache-hit != 'true' || steps.check-venv.outputs.valid != 'true'
+      name: Create Virtual Env
+      run: |
+        # Do not install Playwright browsers in CI here; use the
+        # shared action `./.github/actions/playwright_install` instead.
+        INSTALL_PLAYWRIGHT=false make python-init
+        # Run editable install again to ensure that the local
+        # streamlit module takes precedence. This is
+        # needed to fix an issue with nightly CI where
+        # it might end up installing the latest streamlit version
+        # from pypi:
+        uv pip install --editable ./lib --no-deps
+      shell: bash
+    - name: Show environment info
+      run: |
+        echo "Show environment info"
+        echo "Python version:"
+        python --version
+        echo "uv version:"
+        uv --version
+        echo "Installed dependencies:"
+        uv pip list
+      shell: bash
+    - name: Generate Protobufs
+      run: make protobuf
+      shell: bash

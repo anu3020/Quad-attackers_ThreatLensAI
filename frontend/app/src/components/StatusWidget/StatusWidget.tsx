@@ -1,0 +1,310 @@
+/**
+ * Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022-2026)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+import { ReactElement, ReactNode, useEffect, useRef, useState } from "react"
+
+import Hotkeys from "react-hot-keys"
+import { CSSTransition } from "react-transition-group"
+
+import { ConnectionState } from "@streamlit/connection"
+import {
+  BaseButton,
+  BaseButtonKind,
+  DynamicIcon,
+  Icon,
+  isKeyboardEventFromEditableTarget,
+  Placement,
+  ScriptRunState,
+  Tooltip,
+  useEmotionTheme,
+  useTimeout,
+} from "@streamlit/lib"
+import { isNullOrUndefined, notNullOrUndefined } from "@streamlit/utils"
+
+import { getConnectionStateUI } from "./getConnectionStateUI"
+import IconRunning from "./IconRunning"
+import {
+  StyledAppButtonContainer,
+  StyledAppStatus,
+  StyledAppStatusLabel,
+  StyledConnectionStatus,
+  StyledConnectionStatusLabel,
+  StyledShortcutLabel,
+  StyledStatusWidget,
+} from "./styled-components"
+
+/** Component props */
+export interface StatusWidgetProps {
+  /** State of our connection to the server. */
+  connectionState: ConnectionState
+
+  /** Script's current run state */
+  scriptRunState: ScriptRunState
+
+  /**
+   * Function called when the user chooses to re-run a script in response to
+   * its source file changing.
+   *
+   * @param alwaysRerun if true, also change the run-on-save setting for this
+   * session
+   */
+  rerunScript: (alwaysRerun: boolean) => void
+
+  /** Function called when the user chooses to stop the running script. */
+  stopScript: () => void
+
+  /** Allows users to change user settings to allow rerun on save */
+  allowRunOnSave: boolean
+
+  /** Whether to show script changed actions (rerun/always rerun buttons) */
+  showScriptChangedActions: boolean
+}
+
+// Delay time for displaying running man animation.
+const RUNNING_MAN_DISPLAY_DELAY_TIME_MS = 500
+
+interface PromptButtonProps {
+  title: ReactNode
+  disabled: boolean
+  onClick: () => void
+}
+
+const PromptButton = (props: PromptButtonProps): ReactElement => {
+  return (
+    <StyledAppButtonContainer>
+      <BaseButton
+        kind={BaseButtonKind.HEADER_BUTTON}
+        disabled={props.disabled}
+        containerWidth
+        onClick={props.onClick}
+      >
+        {props.title}
+      </BaseButton>
+    </StyledAppButtonContainer>
+  )
+}
+
+/**
+ * Displays various script- and connection-related info: our WebSocket
+ * connection status, the run-state of our script, and other transient events.
+ */
+const StatusWidget: React.FC<StatusWidgetProps> = ({
+  connectionState,
+  scriptRunState,
+  rerunScript,
+  stopScript,
+  allowRunOnSave,
+  showScriptChangedActions,
+}) => {
+  const [showRunningMan, setShowRunningMan] = useState(false)
+  const theme = useEmotionTheme()
+
+  const {
+    clear: clearShowRunningManTimeout,
+    restart: restartShowRunningManTimeout,
+  } = useTimeout(
+    () => {
+      setShowRunningMan(true)
+    },
+    RUNNING_MAN_DISPLAY_DELAY_TIME_MS,
+    { autoStart: false }
+  )
+
+  const handleAlwaysRerunClick = (): void => {
+    if (allowRunOnSave) {
+      rerunScript(true)
+    }
+  }
+
+  const handleKeyDown = (
+    keyName: string,
+    keyboardEvent?: KeyboardEvent
+  ): void => {
+    // NOTE: 'r' and 'c' are handled at the App level.
+    // See `isKeyboardEventFromEditableTarget` for editable/shadow DOM behavior;
+    // we suppress the "Always rerun" hotkey while the user is typing.
+    if (keyName === "a" && !isKeyboardEventFromEditableTarget(keyboardEvent)) {
+      handleAlwaysRerunClick()
+    }
+  }
+
+  const isConnected = connectionState === ConnectionState.CONNECTED
+
+  const handleStopScriptClick = (): void => {
+    stopScript()
+  }
+
+  const handleRerunClick = (): void => {
+    rerunScript(false)
+  }
+
+  useEffect(() => {
+    if (
+      isConnected &&
+      (scriptRunState === ScriptRunState.RUNNING ||
+        scriptRunState === ScriptRunState.RERUN_REQUESTED)
+    ) {
+      restartShowRunningManTimeout()
+    } else {
+      clearShowRunningManTimeout()
+    }
+
+    if (scriptRunState === ScriptRunState.NOT_RUNNING) {
+      setShowRunningMan(false)
+    }
+  }, [
+    clearShowRunningManTimeout,
+    isConnected,
+    restartShowRunningManTimeout,
+    scriptRunState,
+  ])
+
+  const renderScriptIsRunning = (): ReactNode => {
+    const stopRequested = scriptRunState === ScriptRunState.STOP_REQUESTED
+
+    return showRunningMan ? (
+      <StyledAppStatus>
+        <IconRunning />
+        <PromptButton
+          title={stopRequested ? "Stopping..." : "Stop"}
+          disabled={stopRequested}
+          onClick={handleStopScriptClick}
+        />
+      </StyledAppStatus>
+    ) : (
+      <></>
+    )
+  }
+
+  const renderRerunScriptPrompt = (): ReactNode => {
+    const rerunRequested = scriptRunState === ScriptRunState.RERUN_REQUESTED
+    return (
+      <Hotkeys keyName="a" onKeyDown={handleKeyDown}>
+        <StyledAppStatus>
+          <DynamicIcon
+            size="lg"
+            iconValue=":material/info:"
+            color={theme.colors.fadedText60}
+          />
+          <StyledAppStatusLabel isPrompt>File change.</StyledAppStatusLabel>
+          <PromptButton
+            title={<StyledShortcutLabel>Rerun</StyledShortcutLabel>}
+            disabled={rerunRequested}
+            onClick={handleRerunClick}
+          />
+          {allowRunOnSave && (
+            <PromptButton
+              title={<StyledShortcutLabel>Always rerun</StyledShortcutLabel>}
+              disabled={rerunRequested}
+              onClick={handleAlwaysRerunClick}
+            />
+          )}
+        </StyledAppStatus>
+      </Hotkeys>
+    )
+  }
+
+  const renderConnectionStatus = (): ReactNode => {
+    const ui = getConnectionStateUI(connectionState)
+    if (ui === undefined) {
+      return null
+    }
+    return (
+      <Tooltip content={ui.tooltip} placement={Placement.BOTTOM}>
+        <StyledConnectionStatus
+          className="stConnectionStatus"
+          data-testid="stConnectionStatus"
+        >
+          <Icon size="sm" content={ui.icon} />
+          <StyledConnectionStatusLabel>{ui.label}</StyledConnectionStatusLabel>
+        </StyledConnectionStatus>
+      </Tooltip>
+    )
+  }
+
+  const renderWidget = (): ReactNode => {
+    if (isConnected) {
+      if (
+        scriptRunState === ScriptRunState.RUNNING ||
+        scriptRunState === ScriptRunState.RERUN_REQUESTED
+      ) {
+        // Show scriptIsRunning when the script is actually running,
+        // but also when the user has just requested a re-run.
+        // In the latter case, the server should get around to actually
+        // re-running the script in a second or two, but we can appear
+        // more responsive by claiming it's started immediately.
+        return renderScriptIsRunning()
+      }
+      if (showScriptChangedActions) {
+        return renderRerunScriptPrompt()
+      }
+    }
+
+    return renderConnectionStatus()
+  }
+
+  // The StatusWidget fades in on appear and fades out on disappear.
+  // We keep track of our most recent result from `renderWidget`,
+  // via `this.curView`, so that we can fade out our previous state
+  // if `renderWidget` returns null after returning a non-null value.
+  const curViewRef = useRef<ReactNode>()
+  // nodeRef is passed to CSSTransition to avoid deprecated findDOMNode usage
+  const nodeRef = useRef<HTMLDivElement>(null)
+  // eslint-disable-next-line react-hooks/refs -- TODO: Do not access ref during render
+  const prevView = curViewRef.current
+  // eslint-disable-next-line react-hooks/refs -- TODO: Do not access ref during render
+  curViewRef.current = renderWidget()
+
+  // eslint-disable-next-line react-hooks/refs -- TODO: Do not access ref during render
+  if (isNullOrUndefined(curViewRef.current) && isNullOrUndefined(prevView)) {
+    return <></>
+  }
+
+  let animateIn: boolean
+  let renderView: ReactNode
+  // eslint-disable-next-line react-hooks/refs -- TODO: Do not access ref during render
+  if (notNullOrUndefined(curViewRef.current)) {
+    animateIn = true
+    // eslint-disable-next-line react-hooks/refs -- TODO: Do not access ref during render
+    renderView = curViewRef.current
+  } else {
+    animateIn = false
+    renderView = prevView
+  }
+
+  // NB: the `timeout` value here must match the transition
+  // times specified in the StatusWidget-*-active CSS classes
+  return (
+    <CSSTransition
+      appear={true}
+      in={animateIn}
+      timeout={200}
+      unmountOnExit={true}
+      classNames="StatusWidget"
+      nodeRef={nodeRef}
+    >
+      <StyledStatusWidget
+        ref={nodeRef}
+        key="StatusWidget"
+        className="stStatusWidget"
+        data-testid="stStatusWidget"
+      >
+        {renderView}
+      </StyledStatusWidget>
+    </CSSTransition>
+  )
+}
+
+export default StatusWidget

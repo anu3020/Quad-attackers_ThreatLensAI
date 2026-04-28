@@ -1,0 +1,127 @@
+/**
+ * Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022-2026)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import styled from "@emotion/styled"
+
+import { Metric as MetricProto } from "@streamlit/protobuf"
+
+import {
+  StyledWidgetLabel,
+  StyledWidgetProps,
+} from "~lib/components/widgets/BaseWidget/styled-components"
+import { LabelVisibilityOptions } from "~lib/util/utils"
+
+import { getMetricBackgroundColor, getMetricTextColor } from "./metricColors"
+
+interface StyledMetricContainerProps {
+  showBorder: boolean
+}
+
+export const StyledMetricContainer = styled.div<StyledMetricContainerProps>(
+  ({ theme, showBorder }) => ({
+    height: "100%",
+    ...(showBorder && {
+      border: `${theme.sizes.borderWidth} solid ${theme.colors.borderColor}`,
+      borderRadius: theme.radii.default,
+      overflow: "hidden",
+    }),
+  })
+)
+
+export const StyledMetricContent = styled.div<{ showBorder: boolean }>(
+  ({ theme, showBorder }) => ({
+    ...(showBorder && {
+      padding: `calc(${theme.spacing.lg} - ${theme.sizes.borderWidth})`,
+    }),
+  })
+)
+
+export const StyledMetricChart = styled.div<{ showBorder: boolean }>(
+  ({ theme, showBorder }) => ({
+    marginTop: showBorder ? undefined : theme.spacing.lg,
+    marginBottom: showBorder ? theme.spacing.twoXL : undefined,
+  })
+)
+
+interface StyledMetricLabelTextProps extends StyledWidgetProps {
+  visibility?: LabelVisibilityOptions
+}
+
+export const StyledMetricLabelText = styled(
+  StyledWidgetLabel
+)<StyledMetricLabelTextProps>(({ visibility }) => ({
+  marginBottom: 0,
+  display: visibility === LabelVisibilityOptions.Collapsed ? "none" : "grid",
+  gridTemplateColumns:
+    visibility === LabelVisibilityOptions.Collapsed ? "initial" : "auto 1fr",
+  visibility:
+    visibility === LabelVisibilityOptions.Hidden ? "hidden" : "visible",
+}))
+
+export const StyledMetricValueText = styled.div(({ theme }) => ({
+  fontSize: theme.fontSizes.metricValueFontSize,
+  lineHeight: "normal",
+  fontWeight: theme.fontWeights.metricValueFontWeight,
+  color: theme.colors.bodyText,
+  paddingBottom: theme.spacing.twoXS,
+}))
+
+interface StyledMetricDeltaTextProps {
+  metricColor: MetricProto.MetricColor
+  showArrow: boolean
+}
+
+export const StyledMetricDeltaText = styled.div<StyledMetricDeltaTextProps>(
+  ({ theme, metricColor, showArrow }) => ({
+    // Uses text colors
+    color: getMetricTextColor(theme, metricColor),
+    // Uses same color as shaded bg of area chart (bg color)
+    backgroundColor: getMetricBackgroundColor(theme, metricColor),
+    fontSize: theme.fontSizes.sm,
+    lineHeight: "normal",
+    display: "inline-flex",
+    flexDirection: "row",
+    alignItems: "center",
+    fontWeight: theme.fontWeights.normal,
+    borderRadius: theme.radii.full,
+    maxWidth: "100%",
+    flexShrink: 0,
+    padding: `${theme.spacing.threeXS} ${theme.spacing.xs}`,
+    ...(showArrow && {
+      // Using only twoXS (4px) on the left side because the arrow icon has an additional
+      // 2px padding. Note that this should be adjusted in case we change the arrow icon
+      // or if the arrow is not shown (controlled by the showArrow prop).
+      paddingLeft: theme.spacing.twoXS,
+    }),
+  })
+)
+
+export const StyledDeltaContainer = styled.div(({ theme }) => ({
+  display: "flex",
+  flexDirection: "row",
+  alignItems: "center",
+  gap: "0.5em",
+  maxWidth: "100%",
+  overflow: "hidden",
+  paddingBottom: theme.spacing.twoXS,
+}))
+
+export const StyledDeltaDescription = styled.div({
+  // Flex properties needed for proper truncation within StyledDeltaContainer
+  overflow: "hidden",
+  flexShrink: 1,
+  minWidth: 0,
+})
