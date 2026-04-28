@@ -13,12 +13,29 @@ from streamlit_autorefresh import st_autorefresh
 # PAGE CONFIG
 # =========================================================
 
-st.set_page_config(
-    page_title="ThreatLensAI",
-    page_icon="🛡️",
-    layout="wide"
-)
+st.markdown("""
+<style>
+/* Sidebar text */
+section[data-testid="stSidebar"] * {
+    color: white !important;
+}
 
+/* Radio buttons / labels */
+.stRadio label {
+    color: white !important;
+}
+
+/* Logged in email text */
+a {
+    color: #00bfff !important;
+}
+
+/* Logout button text */
+button {
+    color: black !important;
+}
+</style>
+""", unsafe_allow_html=True)
 # =========================================================
 # DATABASE SETUP
 # =========================================================
