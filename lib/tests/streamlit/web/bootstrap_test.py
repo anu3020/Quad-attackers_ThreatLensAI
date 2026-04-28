@@ -1,0 +1,627 @@
+# Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022-2026)
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+from __future__ import annotations
+
+import os.path
+import sys
+import types
+from io import StringIO
+from unittest import IsolatedAsyncioTestCase, TestCase
+from unittest.mock import Mock, patch
+
+import pytest
+
+from streamlit import config
+from streamlit.runtime.runtime import Runtime
+from streamlit.web import bootstrap
+from tests import testutil
+from tests.testutil import patch_config_options
+
+
+class BootstrapPrintTest(IsolatedAsyncioTestCase):
+    """Test bootstrap.py's printing functions.
+
+    (We use `IsolatedAsyncioTestCase` to ensure that an asyncio event loop
+    exists in tests that implicitly rely on one.)
+    """
+
+    def setUp(self):
+        self.orig_stdout = sys.stdout
+        sys.stdout = StringIO()
+
+    def tearDown(self):
+        sys.stdout.close()  # sys.stdout is a StringIO at this point.
+        sys.stdout = self.orig_stdout
+
+    def test_print_hello_message(self):
+        mock_is_manually_set = testutil.build_mock_config_is_manually_set(
+            {"browser.serverAddress": True}
+        )
+        mock_get_option = testutil.build_mock_config_get_option(
+            {"browser.serverAddress": "the-address"}
+        )
+
+        with (
+            patch.object(config, "get_option", new=mock_get_option),
+            patch.object(config, "is_manually_set", new=mock_is_manually_set),
+        ):
+            bootstrap._print_url(True)
+
+        out = sys.stdout.getvalue()
+        assert "Welcome to Streamlit. Check out our demo in your browser." in out
+        assert "URL: http://the-address" in out
+
+    def test_print_url_hidden_when_config_set(self):
+        """Test that _print_url outputs nothing when logger.hideWelcomeMessage is True."""
+        with patch_config_options({"logger.hideWelcomeMessage": True}):
+            bootstrap._print_url(True)
+
+        out = sys.stdout.getvalue()
+        assert out == ""
+
+    def test_print_urls_configured(self):
+        mock_is_manually_set = testutil.build_mock_config_is_manually_set(
+            {"browser.serverAddress": True}
+        )
+        mock_get_option = testutil.build_mock_config_get_option(
+            {"browser.serverAddress": "the-address"}
+        )
+
+        with (
+            patch.object(config, "get_option", new=mock_get_option),
+            patch.object(config, "is_manually_set", new=mock_is_manually_set),
+        ):
+            bootstrap._print_url(False)
+
+        out = sys.stdout.getvalue()
+        assert "You can now view your Streamlit app in your browser." in out
+        assert "URL: http://the-address" in out
+
+    @patch("streamlit.net_util.get_external_ip")
+    @patch("streamlit.net_util.get_internal_ip")
+    def test_print_urls_remote(self, mock_get_internal_ip, mock_get_external_ip):
+        mock_is_manually_set = testutil.build_mock_config_is_manually_set(
+            {"browser.serverAddress": False}
+        )
+        mock_get_option = testutil.build_mock_config_get_option(
+            {"server.headless": True}
+        )
+
+        mock_get_internal_ip.return_value = "internal-ip"
+        mock_get_external_ip.return_value = "external-ip"
+
+        with (
+            patch.object(config, "get_option", new=mock_get_option),
+            patch.object(config, "is_manually_set", new=mock_is_manually_set),
+        ):
+            bootstrap._print_url(False)
+
+        out = sys.stdout.getvalue()
+        assert "Local URL: http://localhost" in out
+        assert "Network URL: http://internal-ip" in out
+        assert "External URL: http://external-ip" in out
+
+    @patch("streamlit.net_util.get_external_ip")
+    @patch("streamlit.net_util.get_internal_ip")
+    def test_print_urls_remote_no_external(
+        self, mock_get_internal_ip, mock_get_external_ip
+    ):
+        mock_is_manually_set = testutil.build_mock_config_is_manually_set(
+            {"browser.serverAddress": False}
+        )
+        mock_get_option = testutil.build_mock_config_get_option(
+            {"server.headless": True}
+        )
+
+        mock_get_internal_ip.return_value = "internal-ip"
+        mock_get_external_ip.return_value = None
+
+        with (
+            patch.object(config, "get_option", new=mock_get_option),
+            patch.object(config, "is_manually_set", new=mock_is_manually_set),
+        ):
+            bootstrap._print_url(False)
+
+        out = sys.stdout.getvalue()
+        assert "Local URL: http://localhost" in out
+        assert "Network URL: http://internal-ip" in out
+        assert "External URL: http://external-ip" not in out
+
+    @patch("streamlit.net_util.get_external_ip")
+    @patch("streamlit.net_util.get_internal_ip")
+    def test_print_urls_remote_no_internal(
+        self, mock_get_internal_ip, mock_get_external_ip
+    ):
+        mock_is_manually_set = testutil.build_mock_config_is_manually_set(
+            {"browser.serverAddress": False}
+        )
+        mock_get_option = testutil.build_mock_config_get_option(
+            {"server.headless": True}
+        )
+
+        mock_get_internal_ip.return_value = None
+        mock_get_external_ip.return_value = "external-ip"
+
+        with (
+            patch.object(config, "get_option", new=mock_get_option),
+            patch.object(config, "is_manually_set", new=mock_is_manually_set),
+        ):
+            bootstrap._print_url(False)
+
+        out = sys.stdout.getvalue()
+        assert "Local URL: http://localhost" in out
+        assert "Network URL: http://internal-ip" not in out
+        assert "External URL: http://external-ip" in out
+
+    @patch("streamlit.net_util.get_internal_ip")
+    def test_print_urls_local(self, mock_get_internal_ip):
+        mock_is_manually_set = testutil.build_mock_config_is_manually_set(
+            {"browser.serverAddress": False}
+        )
+        mock_get_option = testutil.build_mock_config_get_option(
+            {"server.headless": False}
+        )
+
+        mock_get_internal_ip.return_value = "internal-ip"
+
+        with (
+            patch.object(config, "get_option", new=mock_get_option),
+            patch.object(config, "is_manually_set", new=mock_is_manually_set),
+        ):
+            bootstrap._print_url(False)
+
+        out = sys.stdout.getvalue()
+        assert "Local URL: http://localhost" in out
+        assert "Network URL: http://internal-ip" in out
+
+    @patch("streamlit.net_util.get_internal_ip")
+    def test_print_urls_port(self, mock_get_internal_ip):
+        mock_is_manually_set = testutil.build_mock_config_is_manually_set(
+            {"browser.serverAddress": False}
+        )
+        mock_get_option = testutil.build_mock_config_get_option(
+            {
+                "server.headless": False,
+                "server.port": 9988,
+                "global.developmentMode": False,
+            }
+        )
+
+        mock_get_internal_ip.return_value = "internal-ip"
+
+        with (
+            patch.object(config, "get_option", new=mock_get_option),
+            patch.object(config, "is_manually_set", new=mock_is_manually_set),
+        ):
+            bootstrap._print_url(False)
+
+        out = sys.stdout.getvalue()
+        assert "Local URL: http://localhost:9988" in out
+        assert "Network URL: http://internal-ip:9988" in out
+
+    @patch("streamlit.net_util.get_internal_ip")
+    def test_print_urls_base(self, mock_get_internal_ip):
+        mock_is_manually_set = testutil.build_mock_config_is_manually_set(
+            {"browser.serverAddress": False}
+        )
+        mock_get_option = testutil.build_mock_config_get_option(
+            {
+                "server.headless": False,
+                "server.baseUrlPath": "foo",
+                "server.port": 8501,
+                "global.developmentMode": False,
+            }
+        )
+
+        mock_get_internal_ip.return_value = "internal-ip"
+
+        with (
+            patch.object(config, "get_option", new=mock_get_option),
+            patch.object(config, "is_manually_set", new=mock_is_manually_set),
+        ):
+            bootstrap._print_url(False)
+
+        out = sys.stdout.getvalue()
+        assert "Local URL: http://localhost:8501/foo" in out
+        assert "Network URL: http://internal-ip:8501/foo" in out
+
+    @patch("streamlit.net_util.get_internal_ip")
+    def test_print_urls_base_no_internal(self, mock_get_internal_ip):
+        mock_is_manually_set = testutil.build_mock_config_is_manually_set(
+            {"browser.serverAddress": False}
+        )
+        mock_get_option = testutil.build_mock_config_get_option(
+            {
+                "server.headless": False,
+                "server.baseUrlPath": "foo",
+                "server.port": 8501,
+                "global.developmentMode": False,
+            }
+        )
+
+        mock_get_internal_ip.return_value = None
+
+        with (
+            patch.object(config, "get_option", new=mock_get_option),
+            patch.object(config, "is_manually_set", new=mock_is_manually_set),
+        ):
+            bootstrap._print_url(False)
+
+        out = sys.stdout.getvalue()
+        assert "Local URL: http://localhost:8501/foo" in out
+        assert "Network URL: http://internal-ip:8501/foo" not in out
+
+    @patch("streamlit.net_util.get_internal_ip", return_value="internal-ip")
+    def test_print_urls_ssl(self, mock_get_internal_ip):
+        with patch_config_options(
+            {
+                "server.headless": False,
+                "server.port": 9988,
+                "global.developmentMode": False,
+                "server.sslCertFile": "/tmp/aa",
+                "server.sslKeyFile": "/tmp/aa",
+            }
+        ):
+            bootstrap._print_url(False)
+
+        out = sys.stdout.getvalue()
+        assert "Local URL: https://localhost:9988" in out
+        assert "Network URL: https://internal-ip:9988" in out
+
+    def test_print_socket(self):
+        mock_is_manually_set = testutil.build_mock_config_is_manually_set(
+            {"browser.serverAddress": False}
+        )
+
+        mock_get_option = testutil.build_mock_config_get_option(
+            {
+                "server.address": "unix://mysocket.sock",
+                "global.developmentMode": False,
+            }
+        )
+
+        with (
+            patch.object(config, "get_option", new=mock_get_option),
+            patch.object(config, "is_manually_set", new=mock_is_manually_set),
+        ):
+            bootstrap._print_url(False)
+
+        out = sys.stdout.getvalue()
+        assert "Unix Socket: unix://mysocket.sock" in out
+
+    @patch("streamlit.net_util.get_internal_ip")
+    def test_print_urls_with_wildcard_address(self, mock_get_internal_ip):
+        """Verify 0.0.0.0 shows both Local URL and Network URL like default."""
+        mock_get_internal_ip.return_value = "internal-ip"
+        mock_is_manually_set = testutil.build_mock_config_is_manually_set(
+            {"browser.serverAddress": False, "server.address": True}
+        )
+        mock_get_option = testutil.build_mock_config_get_option(
+            {
+                "server.address": "0.0.0.0",
+                "server.port": 8501,
+                "global.developmentMode": False,
+                "server.headless": False,
+            }
+        )
+
+        with (
+            patch.object(config, "get_option", new=mock_get_option),
+            patch.object(config, "is_manually_set", new=mock_is_manually_set),
+        ):
+            bootstrap._print_url(False)
+
+        out = sys.stdout.getvalue()
+        assert "Local URL: http://localhost:8501" in out
+        assert "Network URL: http://internal-ip:8501" in out
+        # The raw 0.0.0.0 address should not appear in the URL
+        assert "0.0.0.0" not in out
+        # Should not show generic "URL:" label (that's for specific addresses)
+        # Using regex to match "URL:" that is NOT preceded by "Local " or "Network "
+        import re
+
+        assert not re.search(r"(?<!Local )(?<!Network )URL:", out)
+
+    @patch("streamlit.net_util.get_internal_ip")
+    def test_print_urls_with_ipv6_wildcard(self, mock_get_internal_ip):
+        """Verify :: (IPv6 wildcard) shows both Local URL and Network URL like default."""
+        mock_get_internal_ip.return_value = "internal-ip"
+        mock_is_manually_set = testutil.build_mock_config_is_manually_set(
+            {"browser.serverAddress": False, "server.address": True}
+        )
+        mock_get_option = testutil.build_mock_config_get_option(
+            {
+                "server.address": "::",
+                "server.port": 8501,
+                "global.developmentMode": False,
+                "server.headless": False,
+            }
+        )
+
+        with (
+            patch.object(config, "get_option", new=mock_get_option),
+            patch.object(config, "is_manually_set", new=mock_is_manually_set),
+        ):
+            bootstrap._print_url(False)
+
+        out = sys.stdout.getvalue()
+        assert "Local URL: http://localhost:8501" in out
+        assert "Network URL: http://internal-ip:8501" in out
+        # The raw :: address should not appear in the URL
+        assert "http://::" not in out
+        # Should not show generic "URL:" label (that's for specific addresses)
+        # Using regex to match "URL:" that is NOT preceded by "Local " or "Network "
+        import re
+
+        assert not re.search(r"(?<!Local )(?<!Network )URL:", out)
+
+    @patch("streamlit.web.bootstrap.asyncio.get_running_loop", Mock())
+    @patch("streamlit.web.bootstrap.secrets.load_if_toml_exists", Mock())
+    @patch("streamlit.web.bootstrap._maybe_print_static_folder_warning")
+    def test_maybe_print_static_folder_warning_called_once_on_server_start(
+        self, mock_maybe_print_static_folder_warning
+    ):
+        """We should trigger _maybe_print_static_folder_warning on server start."""
+        bootstrap._on_server_start(Mock())
+        mock_maybe_print_static_folder_warning.assert_called_once()
+
+    @patch("os.path.isdir", Mock(return_value=False))
+    @patch("click.secho")
+    def test_maybe_print_static_folder_warning_if_folder_doesnt_exist(self, mock_echo):
+        """We should print a warning when static folder does not exist."""
+
+        with testutil.patch_config_options({"server.enableStaticServing": True}):
+            bootstrap._maybe_print_static_folder_warning("app_root/main_script_path")
+            mock_echo.assert_called_once_with(
+                "WARNING: Static file serving is enabled, but no static folder found "
+                f"at {os.path.abspath('app_root/static')}. To disable static file "
+                f"serving, set server.enableStaticServing to false.",
+                fg="yellow",
+            )
+
+    @patch("os.path.isdir", Mock(return_value=True))
+    @patch(
+        "streamlit.file_util.get_directory_size",
+        Mock(return_value=(2 * bootstrap.MAX_APP_STATIC_FOLDER_SIZE)),
+    )
+    @patch("click.secho")
+    def test_maybe_print_static_folder_warning_if_folder_is_too_large(self, mock_echo):
+        """
+        We should print a warning and disable static files serving when static
+        folder total size is too large.
+        """
+
+        with (
+            testutil.patch_config_options({"server.enableStaticServing": True}),
+            patch.object(config, "set_option") as mock_set_option,
+        ):
+            bootstrap._maybe_print_static_folder_warning("app_root/main_script_path")
+            mock_echo.assert_called_once_with(
+                "WARNING: Static folder size is larger than 1GB. "
+                "Static file serving has been disabled.",
+                fg="yellow",
+            )
+            mock_set_option.assert_called_once_with("server.enableStaticServing", False)
+
+    @patch("streamlit.config.get_config_options")
+    def test_load_config_options(self, patched_get_config_options):
+        """Test that bootstrap.load_config_options parses the keys properly and
+        passes down the parameters.
+        """
+
+        flag_options = {
+            "server_port": 3005,
+            "server_headless": True,
+            "browser_serverAddress": "localhost",
+            "logger_level": "error",
+            # global_minCachedMessageSize shouldn't be set below since it's None.
+            "global_minCachedMessageSize": None,
+        }
+
+        bootstrap.load_config_options(flag_options)
+
+        patched_get_config_options.assert_called_once_with(
+            force_reparse=True,
+            options_from_flags={
+                "server.port": 3005,
+                "server.headless": True,
+                "browser.serverAddress": "localhost",
+                "logger.level": "error",
+            },
+        )
+
+    @patch("streamlit.web.bootstrap.asyncio.get_running_loop", Mock())
+    @patch("streamlit.web.bootstrap._maybe_print_static_folder_warning", Mock())
+    @patch("streamlit.web.bootstrap.secrets.load_if_toml_exists")
+    def test_load_secrets(self, mock_load_secrets):
+        """We should load secrets.toml on startup."""
+        bootstrap._on_server_start(Mock())
+        mock_load_secrets.assert_called_once()
+
+    @patch("streamlit.web.bootstrap.asyncio.get_running_loop", Mock())
+    @patch("streamlit.web.bootstrap._maybe_print_static_folder_warning", Mock())
+    @patch("streamlit.web.bootstrap._LOGGER.exception")
+    @patch("streamlit.web.bootstrap.secrets.load_if_toml_exists")
+    def test_log_secret_load_error(self, mock_load_secrets, mock_log_exception):
+        """If secrets throws an error on startup, we catch and log it."""
+        mock_exception = Exception("Secrets exploded!")
+        mock_load_secrets.side_effect = mock_exception
+
+        bootstrap._on_server_start(Mock())
+        mock_log_exception.assert_called_once_with("Failed to load secrets.toml file")
+
+    @patch("streamlit.config.get_config_options")
+    @patch("streamlit.web.bootstrap.watch_file")
+    def test_install_config_watcher(
+        self, patched_watch_file: Mock, patched_get_config_options: Mock
+    ) -> None:
+        """Test that config watchers are installed for all config file locations."""
+        bootstrap._install_config_watchers(flag_options={"server_port": 8502})
+
+        # watch_file should be called for each config file location (2 locations)
+        assert patched_watch_file.call_count == 2
+
+        # Verify watch_file was called with poll watcher and allow_nonexistent=True
+        _args, kwargs = patched_watch_file.call_args_list[0]
+        assert kwargs["watcher_type"] == "poll"
+        assert kwargs["allow_nonexistent"] is True
+
+        args, _kwargs = patched_watch_file.call_args_list[0]
+        on_config_changed = args[1]
+
+        # Simulate a config file change being detected.
+        on_config_changed("/unused/nonexistent/file/path")
+
+        patched_get_config_options.assert_called_once_with(
+            force_reparse=True,
+            options_from_flags={
+                "server.port": 8502,
+            },
+        )
+
+
+class BootstrapRunTest(IsolatedAsyncioTestCase):
+    def tearDown(self):
+        #  Reset the Runtime._instance for subsequent test runs. Otherwise we will get
+        # a "Runtime already exists" error.
+        Runtime._instance = None
+
+    def test_bootstrap_run(self):
+        with testutil.patch_config_options({"server.headless": True}):
+            bootstrap.run("", False, [], {}, stop_immediately_for_testing=True)
+
+    def test_bootstrap_run_in_existing_event_loop(self):
+        import asyncio
+
+        event_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(event_loop)
+        with testutil.patch_config_options({"server.headless": True}):
+
+            async def _run():
+                bootstrap.run("", False, [], {}, stop_immediately_for_testing=True)
+
+            event_loop.run_until_complete(_run())
+
+    def test_bootstrap_run_without_existing_event_loop(self):
+        import asyncio
+
+        # Remove the existing event loop
+        asyncio.set_event_loop(None)
+
+        with testutil.patch_config_options({"server.headless": True}):
+            bootstrap.run("", False, [], {}, stop_immediately_for_testing=True)
+
+
+class BootstrapUvloopTest(TestCase):
+    def test_installs_uvloop_when_available(self):
+        """uvloop is installed as the default policy when present."""
+        fake_uvloop = types.ModuleType("uvloop")
+        fake_uvloop.install = Mock()
+
+        with (
+            patch.object(bootstrap.env_util, "IS_WINDOWS", False),
+            patch.dict("sys.modules", {"uvloop": fake_uvloop}),
+        ):
+            bootstrap._maybe_install_uvloop(running_in_event_loop=False)
+
+        fake_uvloop.install.assert_called_once()
+
+    def test_skips_install_when_loop_running(self):
+        """uvloop installation is skipped if a loop is already running."""
+        fake_uvloop = types.ModuleType("uvloop")
+        fake_uvloop.install = Mock()
+
+        with (
+            patch.object(bootstrap.env_util, "IS_WINDOWS", False),
+            patch.dict("sys.modules", {"uvloop": fake_uvloop}),
+        ):
+            bootstrap._maybe_install_uvloop(running_in_event_loop=True)
+
+        fake_uvloop.install.assert_not_called()
+
+    def test_skips_install_on_windows(self):
+        """uvloop installation is skipped on Windows."""
+        fake_uvloop = types.ModuleType("uvloop")
+        fake_uvloop.install = Mock()
+
+        with (
+            patch.object(bootstrap.env_util, "IS_WINDOWS", True),
+            patch.dict("sys.modules", {"uvloop": fake_uvloop}),
+        ):
+            bootstrap._maybe_install_uvloop(running_in_event_loop=False)
+
+        fake_uvloop.install.assert_not_called()
+
+    def test_handles_missing_uvloop(self):
+        """Missing uvloop does not raise."""
+        with patch.object(bootstrap.env_util, "IS_WINDOWS", False):
+            with patch.dict("sys.modules", {"uvloop": None}):
+                bootstrap._maybe_install_uvloop(running_in_event_loop=False)
+
+
+class BootstrapAsgiTest(IsolatedAsyncioTestCase):
+    """Test bootstrap functions for ASGI app mode."""
+
+    @patch("streamlit.web.bootstrap.report_watchdog_availability")
+    @patch("streamlit.web.bootstrap._install_config_watchers")
+    @patch("streamlit.web.bootstrap._fix_sys_argv")
+    @patch("streamlit.web.bootstrap._fix_sys_path")
+    def test_run_asgi_app_calls_bootstrap_functions(
+        self,
+        mock_fix_sys_path,
+        mock_fix_sys_argv,
+        mock_install_watchers,
+        mock_report_watchdog,
+    ):
+        """Test that run_asgi_app calls the expected bootstrap functions."""
+        import uvicorn
+
+        with (
+            testutil.patch_config_options(
+                {"server.address": "localhost", "server.port": 8501}
+            ),
+            patch.object(uvicorn, "run") as mock_uvicorn_run,
+        ):
+            bootstrap.run_asgi_app(
+                main_script_path="/path/to/main.py",
+                app_import_string="myapp:app",
+                args=["--arg1", "value1"],
+                flag_options={"server_port": 8501},
+            )
+
+        # Verify process-level setup was called
+        mock_fix_sys_path.assert_called_once_with("/path/to/main.py")
+        mock_fix_sys_argv.assert_called_once_with(
+            "/path/to/main.py", ["--arg1", "value1"]
+        )
+        mock_install_watchers.assert_called_once_with({"server_port": 8501})
+        mock_report_watchdog.assert_called_once()
+
+        # Verify uvicorn.run was called with the app import string
+        mock_uvicorn_run.assert_called_once()
+        call_kwargs = mock_uvicorn_run.call_args
+        assert call_kwargs[0][0] == "myapp:app"
+
+    def test_run_asgi_app_raises_without_uvicorn(self):
+        """Test that run_asgi_app raises RuntimeError if uvicorn is not installed."""
+        with patch.dict("sys.modules", {"uvicorn": None}):
+            with pytest.raises(RuntimeError) as cm:
+                bootstrap.run_asgi_app(
+                    main_script_path="/path/to/main.py",
+                    app_import_string="myapp:app",
+                    args=[],
+                    flag_options={},
+                )
+            assert "uvicorn is required" in str(cm.value)
