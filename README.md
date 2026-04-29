@@ -171,7 +171,6 @@ Threat Score and Status:
 35 – 69      : Suspicious      
 70 – 100     : Phishing Attack 
 
-
 Sample Phishing Email
 
 URGENT!
