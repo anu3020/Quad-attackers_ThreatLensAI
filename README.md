@@ -1,133 +1,214 @@
-🛡 ThreatLensAI
-AI-Powered Cyber Defense & Gmail Threat Detection System
+# ThreatLensAI
+
+AI-Powered Cyber Defense & Email Threat Detection System
+
+---
+
+Overview:
+
+ThreatLensAI is an AI-driven cybersecurity platform designed to detect, analyze, and predict cyber threats in real time. The system combines phishing email detection, machine learning threat prediction, OTP-based authentication, and live system monitoring in a single cybersecurity dashboard.
+
+The project demonstrates how Artificial Intelligence can improve modern cyber defense systems and cybersecurity awareness.
+
+---
+Key Features:
+
+Secure Authentication System:
+
+* Firebase Firestore cloud database integration
+* Gmail-based registration and login
+* Secure password hashing using SHA-256
+* OTP-based multi-factor authentication
 
 
-🚀 Overview
+AI Email Threat Detection:
 
-ThreatLensAI is an AI-driven cybersecurity platform that detects, analyzes, and predicts cyber threats in real time.
-It provides Gmail phishing detection, system monitoring, AI threat prediction, and cloud-based authentication with OTP security.
+* AI-powered phishing email analysis
+* Suspicious keyword detection
+* Suspicious link analysis
+* Fake sender detection
+* Threat scoring and classification
 
-Designed for hackathons, it simulates a real-world Security Operations Center (SOC) powered by AI.
+Threat Categories:
 
-🎯 Key Features
-🔐 Authentication System
-Firebase Cloud Database integration
-Gmail-only registration/login
-SHA-256 password hashing
-OTP-based email verification (2FA security)
-📧 AI Gmail Threat Detection
-Detects phishing emails
-Keyword-based threat scoring
-Suspicious link detection
-Fake sender detection
-Threat classification:
-✅ Safe
-⚠ Suspicious
-🚨 Phishing Attack
-🤖 AI Threat Prediction
-Machine learning model (RandomForest)
-Predicts attack risk based on:
-Failed login attempts
-Network traffic
-Real-time security recommendations
-🖥 System Monitoring
-CPU usage monitoring (psutil)
-Memory usage tracking
-Disk usage analysis
-Live system health dashboard
-📊 Security Dashboard
-Threat statistics visualization
-Attack severity distribution
-Real-time updates
-Cyber defense metrics
-🧠 Tech Stack
-Layer	Technology
-Frontend	Streamlit
-Backend	Python
-Database	Firebase Firestore
-ML Model	Scikit-learn (RandomForest)
-Visualization	Plotly
-System Monitoring	Psutil
-Email Service	Yagmail
-Auth Security	SHA-256 + OTP
+* Safe
+* Suspicious
+* Phishing Attack
+
+Detection Process:
+
+Users can copy email content from Gmail and paste it into the ThreatLensAI scanner for AI-based threat analysis.
+
+---
+
+AI Threat Prediction:
+
+Machine Learning-based cyber threat prediction using RandomForestClassifier.
+
+Prediction Parameters:
+
+* Failed login attempts
+* Network traffic behavior
+* Suspicious activity analysis
+
+Output:
+
+* Risk prediction
+* Security recommendations
+* Threat alerts
 
 
 
-🏗 System Architecture
+System Monitoring Dashboard:
+
+* CPU usage monitoring
+* RAM usage tracking
+* Disk usage analysis
+* Live system health dashboard
+* Threat analytics visualization
+
+
+
+Cybersecurity Dashboard:
+
+* Threat statistics visualization
+* Attack severity distribution
+* Real-time monitoring updates
+* SOC-style cyber defense interface
+
+
+Tech Stack:
+
+| Layer            | Technology         |
+| ---------------- | ------------------ |
+| Frontend         | Streamlit          |
+| Backend          | Python             |
+| Database         | Firebase Firestore |
+| Machine Learning | Scikit-learn       |
+| Visualization    | Plotly             |
+| Monitoring       | Psutil             |
+| Email Service    | Yagmail            |
+| Authentication   | SHA-256 + OTP      |
+
+
+System Architecture:
+
 User
- ↓
-Streamlit UI
- ↓
-Authentication Layer (Firebase + OTP)
- ↓
+↓
+Streamlit Dashboard
+↓
+Authentication Layer
+↓
 AI Threat Detection Engine
- ↓
-ML Prediction Model
- ↓
-Dashboard & Security Reports
+↓
+Machine Learning Prediction Model
+↓
+Security Dashboard & Reports
 
-⚙ Installation & Setup
-1️⃣ Clone Repository
-git clone https://github.com/your-username/ThreatLensAI.git
-cd ThreatLensAI
-2️⃣ Install Dependencies
-pip install -r requirements.txt
-3️⃣ Setup Firebase
-Create Firebase project
-Enable Firestore Database
-Download firebase_key.json
-Place it in project folder
-4️⃣ Configure Email OTP
 
-Edit in app.py:
+Installation & Setup:
 
-user="YOUR_GMAIL@gmail.com"
-password="YOUR_GMAIL_APP_PASSWORD"
+Clone Repository
+Clone the ThreatLensAI repository from GitHub.
+Install Dependencies
+Install all required Python libraries from the requirements file.
 
-👉 Enable Gmail App Password from Google Security settings.
 
-5️⃣ Run Application
-streamlit run app.py
-🔐 OTP Login Flow
-User Login → Validate Credentials → OTP Sent to Gmail → Verify OTP → Access Granted
-📧 Email Threat Detection Flow
-Paste Email → AI Scan → Keyword Detection → Link Analysis → Risk Score → Final Verdict
-📊 Threat Levels
-Score	Status
-0 - 34	✅ Safe
-35 - 69	⚠ Suspicious
-70 - 100	🚨 Phishing Attack
-🧪 Sample Phishing Email
+Configure Firebase:
+
+* Create a Firebase project
+* Enable Firestore Database
+* Download the Firebase Admin SDK JSON file
+* Place the file inside the project folder
+
+
+Configure Gmail OTP Service
+
+* Enable Gmail App Password
+* Add your Gmail credentials inside the application configuration
+
+
+Run Application
+
+Start the Streamlit application to launch the cybersecurity dashboard.
+Streamlit run app.py
+
+OTP Authentication Flow
+
+User Login
+↓
+Credential Verification
+↓
+OTP Sent to Gmail
+↓
+OTP Verification
+↓
+Access Granted
+
+
+
+AI Email Threat Detection Flow
+
+Copy Email Content
+↓
+Paste into ThreatLensAI
+↓
+AI Threat Scanner
+↓
+Keyword & Link Analysis
+↓
+Threat Score Calculation
+↓
+Threat Classification
+
+
+
+Threat Levels:
+
+Threat Score and Status:
+
+0 – 34       : Safe            
+35 – 69      : Suspicious      
+70 – 100     : Phishing Attack 
+
+
+Sample Phishing Email
+
 URGENT!
 
 Your bank account has been suspended.
 Click below immediately to verify:
-http://fake-login.com
+[http://fake-login.com](http://fake-login.com)
 
 Failure to act will result in permanent suspension.
-🏆 Hackathon Highlights
-
-✔ Real-time AI cybersecurity system
-✔ Gmail phishing detection
-✔ OTP-based authentication (MFA)
-✔ Cloud database (Firebase)
-✔ Machine learning threat prediction
-✔ Live system monitoring dashboard
-✔ SOC-style security simulation
-
-🔮 Future Improvements
-Gmail API integration (auto email scanning)
-Deep learning phishing detection
-Browser extension version
-Dark web threat intelligence feed
-AI chatbot security assistant (LLM-based)
-Multi-user admin dashboard
-👨‍💻 Author
-
-ThreatLensAI Project
-Built for AI Cybersecurity Hackathon 🚀
 
 
+
+Hackathon Highlights
+
+* AI-powered cyber defense platform
+* AI phishing email detection
+* OTP-based authentication
+* Firebase cloud integration
+* Machine learning threat prediction
+* Real-time monitoring dashboard
+* Cyber threat analytics
+
+Future Improvements
+
+* Real-time Gmail API integration
+* Automatic inbox monitoring
+* Deep learning phishing detection
+* Browser extension integration
+* AI security chatbot assistant
+* Multi-user admin dashboard
+* Automated threat quarantine system
+
+
+Author
+
+ThreatLensAI Team
+Built for AI Cybersecurity Hackathon
 
 Application Screenshots:
 
