@@ -127,5 +127,23 @@ Multi-user admin dashboard
 ThreatLensAI Project
 Built for AI Cybersecurity Hackathon 🚀
 
-📜 License
-This project is for educational and hackathon use only.
+
+
+Application Screenshots:
+
+Login Page
+![Login Page](screenshots/login.png)
+
+---
+
+Dashboard
+![Dashboard](screenshots/dashboard.png)
+
+---
+
+AI Assistant
+![AI Assistant](screenshots/AiAssistant.png)
+
+
+Threat Prediction
+![Threat Prediction](screenshots/ThreatPridition.png)
