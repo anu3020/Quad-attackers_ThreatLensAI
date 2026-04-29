@@ -227,4 +227,4 @@ AI Assistant
 
 
 Threat Prediction
-![Threat Prediction](screenshots/ThreatPridition.png)
+![Threat Prediction](screenshots/ThreatPrediction.png)
