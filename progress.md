@@ -57,6 +57,7 @@ Safe / Suspicious / Phishing classification added
 
 ✔ Email scanner working
 ✔ Basic AI rule-based detection done
+Fixed module import and authentication issues
 
 🔜 Next Steps
 Improve AI model accuracy
